@@ -12,4 +12,6 @@ pub enum Error {
     },
     #[error("document is encrypted: {0}")]
     Encrypted(PathBuf),
+    #[error("an error occurred when parsing the pdf: {0}")]
+    Pdf(#[from] lopdf::Error),
 }

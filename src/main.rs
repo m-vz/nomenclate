@@ -10,4 +10,5 @@ fn main() {
 
     let parser = Parser::load("data/pdf/analysis_of_blood_flow_in_one.pdf")
         .expect("could not load document");
+    parser.parse_pages(2);
 }
