@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add parser struct
+- Add logging support
+
 ### Changed
 
 - Load pdf document

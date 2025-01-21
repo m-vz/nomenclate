@@ -3,7 +3,10 @@ name = "nomenclate"
 version = "0.1.0"
 edition = "2021"
 authors = ["milan <milan@milan.wtf>"]
+repository = "https://github.com/m-vz/nomenclate"
 description = "A tool to automatically rename document files according to their title."
+keywords = ["cli", "pdf", "rename"]
+categories = ["command-line-utilities", "filesystem", "text-processing"]
 license = "MIT"
 
 [dependencies]
