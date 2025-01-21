@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use lopdf::{content, Object};
 use thiserror::Error;
@@ -17,6 +17,10 @@ pub enum Operation {
     EndText,
     Leading(f32),
     FontSize(f32),
+    Offset(f32),
+    OffsetWithLeading(f32),
+    Position(f32),
+    OffsetByLeading,
 }
 
 impl TryFrom<content::Operation> for Operation {
@@ -42,6 +46,14 @@ impl TryFrom<content::Operation> for Operation {
             "TL" => parse_with_param(0, Self::Leading),
             // font size Tf
             "Tf" => parse_with_param(1, Self::FontSize),
+            // tx ty Td
+            "Td" => parse_with_param(1, Self::Offset),
+            // tx ty TD
+            "TD" => parse_with_param(1, Self::OffsetWithLeading),
+            // a b c d e f Tm
+            "Tm" => parse_with_param(5, Self::Position),
+            // T*
+            "T*" => Ok(Self::OffsetByLeading),
             _ => Err(Error::NotImplemented(operator)),
         }
     }
@@ -54,6 +66,11 @@ impl Display for Operation {
             Self::EndText => write!(f, "end text"),
             Self::Leading(leading) => write!(f, "  set leading {leading}"),
             Self::FontSize(size) => write!(f, "  font size {size}"),
+            Self::Offset(offset) => write!(f, "  offset y by {offset}"),
+            Self::OffsetWithLeading(offset) => Display::fmt(&Self::Leading(-offset), f)
+                .and_then(|()| Display::fmt(&Self::Offset(*offset), f)),
+            Self::Position(position) => write!(f, "  set y to {position}"),
+            Self::OffsetByLeading => write!(f, "  offset y by current leading"),
         }
     }
 }
