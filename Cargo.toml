@@ -7,3 +7,5 @@ description = "A tool to automatically rename document files according to their 
 license = "MIT"
 
 [dependencies]
+lopdf = "0.35.0"
+thiserror = "2.0.11"
