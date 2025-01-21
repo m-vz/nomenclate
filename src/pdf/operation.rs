@@ -12,6 +12,8 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub enum Operation {
     FontSize(f32),
+    BeginText,
+    EndText,
 }
 
 impl TryFrom<content::Operation> for Operation {
@@ -27,6 +29,10 @@ impl TryFrom<content::Operation> for Operation {
                 .and_then(|size| size.as_f32().ok())
                 .map(Self::FontSize)
                 .ok_or(Error::NotImplemented(operator)),
+            // BT
+            "BT" => Ok(Self::BeginText),
+            // ET
+            "ET" => Ok(Self::EndText),
             _ => Err(Error::NotImplemented(operator)),
         }
     }
@@ -35,7 +41,9 @@ impl TryFrom<content::Operation> for Operation {
 impl Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FontSize(size) => write!(f, "font size {size}"),
+            Self::FontSize(size) => write!(f, "    font size {size}"),
+            Self::BeginText => write!(f, "  begin text"),
+            Self::EndText => write!(f, "  end text"),
         }
     }
 }

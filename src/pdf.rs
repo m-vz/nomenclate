@@ -79,6 +79,7 @@ impl Parser {
                     Operation::FontSize(size) => {
                         self.font_size = Some(size);
                     }
+                    _ => {}
                 }
             });
 
