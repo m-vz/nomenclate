@@ -1,16 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use error::Error;
-use lopdf::{
-    content::{Content, Operation},
-    Document, ObjectId,
-};
+use lopdf::{content::Content, Document, ObjectId};
+use operation::Operation;
 
 pub mod error;
+mod operation;
 
 pub struct Parser {
     path: PathBuf,
     document: Document,
+    font_size: Option<f32>,
 }
 
 impl Parser {
@@ -34,7 +34,11 @@ impl Parser {
                 }
             })?;
 
-        Ok(Self { path, document })
+        Ok(Self {
+            path,
+            document,
+            font_size: None,
+        })
     }
 
     /// Parse the first `page_count` pages of a document.
@@ -43,7 +47,7 @@ impl Parser {
     /// shown to the user.
     ///
     /// If a page could not be parsed properly, it is skipped and a warning is shown to the user.
-    pub fn parse_pages(&self, page_count: u32) {
+    pub fn parse_pages(&mut self, page_count: u32) {
         for page in 1..=page_count {
             if let Some(page_id) = self.page_id(page) {
                 log::debug!("Parsing page {page}");
@@ -60,19 +64,23 @@ impl Parser {
         }
     }
 
-    fn parse_page(&self, page: ObjectId) -> Result<(), Error> {
+    fn parse_page(&mut self, page: ObjectId) -> Result<(), Error> {
         let content = Content::decode(&self.document.get_page_content(page).map_err(Error::Pdf)?)
             .map_err(Error::Pdf)?;
 
-        for Operation { operator, operands } in content.operations.into_iter().filter(|operation| {
-            ["Tf", "Tj", "TJ", "\"", "'"].contains(&operation.operator.as_str())
-        }) {
-            match operator.as_str() {
-                "Tf" => println!("font size {operands:?}"),
-                "Tj" | "TJ" | "\"" | "'" => println!("{operands:?}"),
-                _ => {}
-            }
-        }
+        content
+            .operations
+            .into_iter()
+            .flat_map(Operation::try_from)
+            .for_each(|operation| {
+                log::trace!("{operation}");
+
+                match operation {
+                    Operation::FontSize(size) => {
+                        self.font_size = Some(size);
+                    }
+                }
+            });
 
         Ok(())
     }
