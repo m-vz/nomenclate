@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use lopdf::content;
+use lopdf::{content, Object};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -25,23 +25,23 @@ impl TryFrom<content::Operation> for Operation {
     fn try_from(
         content::Operation { operator, operands }: content::Operation,
     ) -> Result<Self, Self::Error> {
+        let parse_with_param = |param_index, operation: fn(f32) -> Self| {
+            operands
+                .get(param_index)
+                .and_then(|param: &Object| param.as_float().ok())
+                .map(operation)
+                .ok_or_else(|| Error::ParseError(operator.clone()))
+        };
+
         match operator.as_str() {
             // BT
             "BT" => Ok(Self::BeginText),
             // ET
             "ET" => Ok(Self::EndText),
             // leading TL
-            "TL" => operands
-                .first()
-                .and_then(|leading| leading.as_float().ok())
-                .map(Self::Leading)
-                .ok_or(Error::ParseError(operator)),
+            "TL" => parse_with_param(0, Self::Leading),
             // font size Tf
-            "Tf" => operands
-                .get(1)
-                .and_then(|size| size.as_float().ok())
-                .map(Self::FontSize)
-                .ok_or(Error::ParseError(operator)),
+            "Tf" => parse_with_param(1, Self::FontSize),
             _ => Err(Error::NotImplemented(operator)),
         }
     }
