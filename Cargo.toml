@@ -1,0 +1,9 @@
+[package]
+name = "nomenclate"
+version = "0.1.0"
+edition = "2021"
+authors = ["milan <milan@milan.wtf>"]
+description = "A tool to automatically rename document files according to their title."
+license = "MIT"
+
+[dependencies]
