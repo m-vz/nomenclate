@@ -43,6 +43,10 @@ pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<(), Error
 }
 
 fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
+    let mut font_size = 0.;
+    let mut leading = 0.;
+    let mut y = 0.;
+
     for operation in page
         .contents
         .as_ref()
@@ -50,13 +54,28 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
         .operations(resolver)?
     {
         match operation {
-            Op::Leading { leading } => log::info!("leading: {leading}"),
-            Op::TextFont { size, .. } => log::info!("font size: {size}"),
-            Op::MoveTextPosition { translation } => {
-                log::info!("translate text: {translation}");
+            Op::Leading { leading: amount } => {
+                log::debug!("leading: {amount}");
+                leading = amount;
             }
-            Op::SetTextMatrix { matrix } => log::info!("set text matrix: {matrix}"),
-            Op::TextNewline => log::info!("text newline"),
+            Op::TextFont { size, .. } => {
+                log::debug!("font size: {size}");
+                font_size = size;
+            }
+            // `Td`, `TD`
+            Op::MoveTextPosition { translation } => {
+                translate_text(&mut y, translation.y);
+            }
+            // `Tm`
+            Op::SetTextMatrix { matrix } => {
+                y = matrix.f;
+                log::debug!("set y = {y}");
+            }
+            // `T*`
+            Op::TextNewline => {
+                translate_text(&mut y, -leading);
+            }
+            // `Tj`
             Op::TextDraw { text } => log::info!(
                 "write {:?}",
                 text.to_string().expect("could not parse string")
@@ -84,4 +103,9 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn translate_text(y: &mut f32, dy: f32) {
+    *y += dy;
+    log::debug!("translate y by {dy}, y = {y}");
 }
