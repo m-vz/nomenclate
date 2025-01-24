@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use pdf::PdfError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -8,10 +9,8 @@ pub enum Error {
     Load {
         path: PathBuf,
         #[source]
-        source: lopdf::Error,
+        source: PdfError,
     },
-    #[error("document is encrypted: {0}")]
-    Encrypted(PathBuf),
     #[error("an error occurred when parsing the pdf: {0}")]
-    Pdf(#[from] lopdf::Error),
+    Pdf(#[from] PdfError),
 }
