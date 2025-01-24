@@ -11,6 +11,8 @@ pub enum Error {
         #[source]
         source: PdfError,
     },
+    #[error("page has no content")]
+    NoContent,
     #[error("an error occurred when parsing the pdf: {0}")]
     Pdf(#[from] PdfError),
 }

@@ -30,21 +30,24 @@ pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<(), Error
         .enumerate()
         .filter_map(|(page_number, page)| {
             page.inspect_err(|err| log::warn!("skipping page {page_number}: {err}"))
+                .map(|page| (page_number, page))
                 .ok()
         })
-        .for_each(|page| parse_page(&page, &resolver));
+        .for_each(|(page_number, page)| {
+            if let Err(err) = parse_page(&page, &resolver) {
+                log::error!("could not parse page {page_number}: {err}");
+            }
+        });
 
     Ok(())
 }
 
-fn parse_page(page: &PageRc, resolver: &impl Resolve) {
-    let contents = page
+fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
+    for operation in page
         .contents
         .as_ref()
-        .expect("could not get contents for page: {page:?}");
-    for operation in contents
-        .operations(resolver)
-        .expect("could not get operations for page: {page:?}")
+        .ok_or(Error::NoContent)?
+        .operations(resolver)?
     {
         match operation {
             Op::Leading { leading } => log::info!("leading: {leading}"),
@@ -79,4 +82,6 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) {
             operation => log::trace!("skipping operation {operation:?}"),
         }
     }
+
+    Ok(())
 }
