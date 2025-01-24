@@ -11,8 +11,7 @@ pub mod error;
 
 /// Load a PDF document and parse the first `page_count` pages.
 ///
-/// If the document has less than `page_count` pages, all pages are parsed and a warning is
-/// shown to the user.
+/// If the document has less than `page_count` pages, all pages are parsed.
 ///
 /// If a page could not be parsed properly, it is skipped and a warning is shown to the user.
 ///
@@ -26,12 +25,15 @@ pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<(), Error
         .map_err(|err| Error::Load { path, source: err })?;
     let resolver = file.resolver();
 
-    for page in file.pages().take(page_count) {
-        match page {
-            Ok(page) => parse_page(&page, &resolver),
-            Err(err) => return Err(err.into()),
-        }
-    }
+    file.pages()
+        .take(page_count)
+        .enumerate()
+        .filter_map(|(page_number, page)| {
+            page.inspect_err(|err| log::warn!("skipping page {page_number}: {err}"))
+                .ok()
+        })
+        .for_each(|page| parse_page(&page, &resolver));
+
     Ok(())
 }
 
