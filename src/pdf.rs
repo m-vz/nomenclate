@@ -1,13 +1,62 @@
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
+use approx::abs_diff_ne;
 use error::Error;
 use pdf::{
     content::{Op, TextDrawAdjusted},
     file::FileOptions,
     object::{PageRc, Resolve},
+    primitive::PdfString,
 };
 
 pub mod error;
+
+struct PositionedText {
+    text: String,
+    font_size: f32,
+    y: f32,
+}
+
+impl PositionedText {
+    fn from_text(text: &PdfString, font_size: f32, y: f32) -> Self {
+        Self {
+            text: text.to_string().expect("could not parse pdf string"),
+            font_size,
+            y,
+        }
+    }
+    fn from_text_array(array: &[TextDrawAdjusted], font_size: f32, y: f32) -> Self {
+        Self {
+            text: array
+                .iter()
+                .filter_map(|elem| match elem {
+                    TextDrawAdjusted::Text(text) => {
+                        Some(text.to_string().expect("could not parse pdf string"))
+                    }
+                    TextDrawAdjusted::Spacing(spacing) => {
+                        if *spacing < -100. {
+                            Some(String::from(" "))
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect::<String>(),
+            font_size,
+            y,
+        }
+    }
+}
+
+impl Display for PositionedText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "text at y = {} with font size {}: {:?}",
+            self.y, self.font_size, self.text
+        )
+    }
+}
 
 /// Load a PDF document and parse the first `page_count` pages.
 ///
@@ -46,6 +95,7 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
     let mut font_size = 0.;
     let mut leading = 0.;
     let mut y = 0.;
+    let mut positioned_text = Vec::new();
 
     for operation in page
         .contents
@@ -82,27 +132,15 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
                 translate_text(&mut y, -leading);
             }
             // `Tj`
-            Op::TextDraw { text } => log::info!(
-                "write {:?}",
-                text.to_string().expect("could not parse string")
-            ),
+            Op::TextDraw { text } => {
+                let text = PositionedText::from_text(&text, font_size, y);
+                log::debug!("write {text}");
+                positioned_text.push(text);
+            }
             Op::TextDrawAdjusted { array } => {
-                log::info!(
-                    "write adjusted {:?}",
-                    array
-                        .iter()
-                        .filter_map(|elem| match elem {
-                            TextDrawAdjusted::Text(text) =>
-                                Some(text.to_string().expect("could not parse string")),
-                            TextDrawAdjusted::Spacing(spacing) =>
-                                if *spacing < -100. {
-                                    Some(String::from(" "))
-                                } else {
-                                    None
-                                },
-                        })
-                        .collect::<String>()
-                );
+                let text = PositionedText::from_text_array(&array, font_size, y);
+                log::debug!("write {text}");
+                positioned_text.push(PositionedText::from_text_array(&array, font_size, y));
             }
             operation => log::trace!("skipping operation {operation:?}"),
         }
