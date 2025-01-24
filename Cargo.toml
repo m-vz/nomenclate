@@ -10,6 +10,7 @@ categories = ["command-line-utilities", "filesystem", "text-processing"]
 license = "MIT"
 
 [dependencies]
+approx = "0.5.1"
 log = "0.4.25"
 pdf = "0.9.0"
 pretty_env_logger = "0.5.0"

@@ -54,6 +54,12 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
         .operations(resolver)?
     {
         match operation {
+            Op::BeginText => {
+                log::debug!("reset text state");
+                font_size = 0.;
+                leading = 0.;
+                y = 0.;
+            }
             Op::Leading { leading: amount } => {
                 log::debug!("leading: {amount}");
                 leading = amount;
@@ -106,6 +112,8 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
 }
 
 fn translate_text(y: &mut f32, dy: f32) {
-    *y += dy;
-    log::debug!("translate y by {dy}, y = {y}");
+    if abs_diff_ne!(dy, 0.) {
+        *y += dy;
+        log::debug!("translate y by {dy}, y = {y}");
+    }
 }
