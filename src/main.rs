@@ -8,6 +8,7 @@ fn main() {
 
     let text  = pdf::parse_pdf("data/pdf/analysis_of_blood_flow_in_one.pdf", 2)
         .expect("could not load document");
+    let text = sanitize_filename::sanitize(text);
 
     println!("{text}");
 }
