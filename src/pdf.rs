@@ -1,7 +1,8 @@
 use std::{fmt::Display, path::Path};
 
-use approx::abs_diff_ne;
+use approx::{abs_diff_eq, abs_diff_ne};
 use error::Error;
+use font::{FontCache, FontInfo};
 use pdf::{
     content::{Op, TextDrawAdjusted},
     file::FileOptions,
@@ -10,6 +11,7 @@ use pdf::{
 };
 
 pub mod error;
+mod font;
 
 struct PositionedText {
     text: String,
@@ -18,20 +20,20 @@ struct PositionedText {
 }
 
 impl PositionedText {
-    fn from_text(text: &PdfString, font_size: f32, y: f32) -> Self {
+    fn from_text(text: &PdfString, state: &TextState) -> Self {
         Self {
-            text: text.to_string().expect("could not parse pdf string"),
-            font_size,
-            y,
+            text: state.font.decode(text).expect("could not parse pdf string"),
+            font_size: state.font_size,
+            y: state.y,
         }
     }
-    fn from_text_array(array: &[TextDrawAdjusted], font_size: f32, y: f32) -> Self {
+    fn from_text_array(array: &[TextDrawAdjusted], state: &TextState) -> Self {
         Self {
             text: array
                 .iter()
                 .filter_map(|elem| match elem {
                     TextDrawAdjusted::Text(text) => {
-                        Some(text.to_string().expect("could not parse pdf string"))
+                        Some(state.font.decode(text).expect("could not parse pdf string"))
                     }
                     TextDrawAdjusted::Spacing(spacing) => {
                         if *spacing < -100. {
@@ -42,8 +44,8 @@ impl PositionedText {
                     }
                 })
                 .collect::<String>(),
-            font_size,
-            y,
+            font_size: state.font_size,
+            y: state.y,
         }
     }
 }
@@ -56,6 +58,14 @@ impl Display for PositionedText {
             self.y, self.font_size, self.text
         )
     }
+}
+
+#[derive(Clone, Default)]
+pub struct TextState {
+    pub font: FontInfo,
+    pub font_size: f32,
+    pub leading: f32,
+    pub y: f32,
 }
 
 /// Load a PDF document and parse the first `page_count` pages.
@@ -82,19 +92,32 @@ pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<(), Error
                 .map(|page| (page_number, page))
                 .ok()
         })
-        .for_each(|(page_number, page)| {
-            if let Err(err) = parse_page(&page, &resolver) {
-                log::error!("could not parse page {page_number}: {err}");
-            }
-        });
+        .for_each(
+            |(page_number, page)| match largest_text_elements(&page, &resolver) {
+                Ok(largest) => {
+                    println!(
+                        "{}",
+                        largest
+                            .into_iter()
+                            .map(|text| text.text)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    );
+                }
+                Err(err) => log::error!("could not parse page {page_number}: {err}"),
+            },
+        );
 
     Ok(())
 }
 
-fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
-    let mut font_size = 0.;
-    let mut leading = 0.;
-    let mut y = 0.;
+fn largest_text_elements(
+    page: &PageRc,
+    resolver: &impl Resolve,
+) -> Result<Vec<PositionedText>, Error> {
+    let font_cache = FontCache::from_page(page, resolver);
+    let mut state = TextState::default();
+    let mut max_font_size = 0.;
     let mut positioned_text = Vec::new();
 
     for operation in page
@@ -106,52 +129,75 @@ fn parse_page(page: &PageRc, resolver: &impl Resolve) -> Result<(), Error> {
         match operation {
             Op::BeginText => {
                 log::debug!("reset text state");
-                font_size = 0.;
-                leading = 0.;
-                y = 0.;
+                state.font_size = 0.;
+                state.leading = 0.;
+                state.y = 0.;
             }
             Op::Leading { leading: amount } => {
                 log::debug!("leading: {amount}");
-                leading = amount;
+                state.leading = amount;
             }
-            Op::TextFont { size, .. } => {
-                log::debug!("font size: {size}");
-                font_size = size;
+            Op::GraphicsState { ref name } => {
+                if let Some((font, size)) =
+                    font_cache.get_font_from_graphic_state(name, page, resolver)
+                {
+                    log::debug!("graphics state font {name} ({size})");
+                    state.font = font;
+                    state.font_size = size;
+
+                    if size > max_font_size {
+                        max_font_size = size;
+                    }
+                }
+            }
+            Op::TextFont { ref name, size } => {
+                log::debug!("font {name} ({size})");
+                state.font = font_cache.get_font(name);
+                state.font_size = size;
+
+                if size > max_font_size {
+                    max_font_size = size;
+                }
             }
             // `Td`, `TD`
             Op::MoveTextPosition { translation } => {
-                translate_text(&mut y, translation.y);
+                translate_text(&mut state, translation.y);
             }
             // `Tm`
             Op::SetTextMatrix { matrix } => {
-                y = matrix.f;
-                log::debug!("set y = {y}");
+                state.y = matrix.f;
+                log::debug!("set y = {}", state.y);
             }
             // `T*`
             Op::TextNewline => {
-                translate_text(&mut y, -leading);
+                let dy = -state.leading;
+                translate_text(&mut state, dy);
             }
             // `Tj`
             Op::TextDraw { text } => {
-                let text = PositionedText::from_text(&text, font_size, y);
+                let text = PositionedText::from_text(&text, &state);
                 log::debug!("write {text}");
                 positioned_text.push(text);
             }
             Op::TextDrawAdjusted { array } => {
-                let text = PositionedText::from_text_array(&array, font_size, y);
+                let text = PositionedText::from_text_array(&array, &state);
                 log::debug!("write {text}");
-                positioned_text.push(PositionedText::from_text_array(&array, font_size, y));
+                positioned_text.push(PositionedText::from_text_array(&array, &state));
             }
             operation => log::trace!("skipping operation {operation:?}"),
         }
     }
 
-    Ok(())
+    log::info!("max font size: {max_font_size}");
+    Ok(positioned_text
+        .into_iter()
+        .filter(|text| abs_diff_eq!(text.font_size, max_font_size))
+        .collect())
 }
 
-fn translate_text(y: &mut f32, dy: f32) {
+fn translate_text(state: &mut TextState, dy: f32) {
     if abs_diff_ne!(dy, 0.) {
-        *y += dy;
-        log::debug!("translate y by {dy}, y = {y}");
+        state.y += dy;
+        log::debug!("translate y by {dy}, y = {}", state.y);
     }
 }
