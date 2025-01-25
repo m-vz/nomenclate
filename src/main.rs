@@ -6,6 +6,8 @@ mod pdf;
 fn main() {
     pretty_env_logger::init();
 
-    pdf::parse_pdf("data/pdf/analysis_of_blood_flow_in_one.pdf", 2)
+    let text  = pdf::parse_pdf("data/pdf/analysis_of_blood_flow_in_one.pdf", 2)
         .expect("could not load document");
+
+    println!("{text}");
 }

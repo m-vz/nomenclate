@@ -77,44 +77,46 @@ pub struct TextState {
 /// # Errors
 ///
 /// This function will return an error if the document could not be loaded.
-pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<(), Error> {
+pub fn parse_pdf<P: AsRef<Path>>(path: P, page_count: usize) -> Result<String, Error> {
     let path = path.as_ref().to_path_buf();
     let file = FileOptions::cached()
         .open(path.clone())
         .map_err(|err| Error::Load { path, source: err })?;
     let resolver = file.resolver();
+    let mut max_font_size = 0.;
+    let mut text = String::new();
 
-    file.pages()
-        .take(page_count)
-        .enumerate()
-        .filter_map(|(page_number, page)| {
-            page.inspect_err(|err| log::warn!("skipping page {page_number}: {err}"))
-                .map(|page| (page_number, page))
-                .ok()
-        })
-        .for_each(
-            |(page_number, page)| match largest_text_elements(&page, &resolver) {
-                Ok(largest) => {
-                    println!(
-                        "{}",
-                        largest
-                            .into_iter()
-                            .map(|text| text.text)
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    );
-                }
-                Err(err) => log::error!("could not parse page {page_number}: {err}"),
-            },
-        );
+    for (page_number, page) in
+        file.pages()
+            .take(page_count)
+            .enumerate()
+            .filter_map(|(page_number, page)| {
+                page.inspect_err(|err| log::warn!("skipping page {page_number}: {err}"))
+                    .map(|page| (page_number, page))
+                    .ok()
+            })
+    {
+        if let Ok((page_text, font_size)) = largest_text_elements(&page, &resolver)
+            .inspect_err(|err| log::error!("could not parse page {page_number}: {err}"))
+        {
+            if font_size > max_font_size {
+                text = page_text
+                    .into_iter()
+                    .map(|text| text.text)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                max_font_size = font_size;
+            }
+        }
+    }
 
-    Ok(())
+    Ok(text)
 }
 
 fn largest_text_elements(
     page: &PageRc,
     resolver: &impl Resolve,
-) -> Result<Vec<PositionedText>, Error> {
+) -> Result<(Vec<PositionedText>, f32), Error> {
     let font_cache = FontCache::from_page(page, resolver);
     let mut state = TextState::default();
     let mut max_font_size = 0.;
@@ -189,10 +191,13 @@ fn largest_text_elements(
     }
 
     log::info!("max font size: {max_font_size}");
-    Ok(positioned_text
-        .into_iter()
-        .filter(|text| abs_diff_eq!(text.font_size, max_font_size))
-        .collect())
+    Ok((
+        positioned_text
+            .into_iter()
+            .filter(|text| abs_diff_eq!(text.font_size, max_font_size))
+            .collect(),
+        max_font_size,
+    ))
 }
 
 fn translate_text(state: &mut TextState, dy: f32) {
